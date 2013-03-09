@@ -7,7 +7,7 @@ __license__   = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import socket, os, argparse, errno, sys
+import socket, os, argparse, errno, sys, select
 
 from powerline.shell import ShellPowerline
 from powerline.lib import parsedotval
@@ -45,15 +45,23 @@ def eintr_retry_call(func, *args, **kwargs):
         try:
             return func(*args, **kwargs)
         except EnvironmentError as e:
-            if getattr(e, 'errno', None) == errno.EINTR:
+            if getattr(e, 'errno', None) in (errno.EINTR, errno.EBUSY, errno.EAGAIN):
                 continue
             raise
 
 def do_read(conn):
     read = []
-    while not read or not read[-1][-2:] == b'\0\0':
+    while not read or not read[-1].endswith(b'\0\0'):
+        r, w, e = select.select((conn,), (), (conn,), 1.0)
+        if e:
+            return
+        if not r:
+            continue
         x = eintr_retry_call(conn.recv, 4096)
-        read.append(x)
+        if x:
+            read.append(x)
+        else:
+            break
     return b''.join(read)
 
 def handle_client(conn):
@@ -73,6 +81,12 @@ def handle_client(conn):
                 ans = str(e)
             if isinstance(ans, type(u'')):
                 ans = ans.encode('utf-8')
+            while True:
+                r, w, e = select.select((), (conn,), (conn,))
+                if e:
+                    return
+                if w:
+                    break
             try:
                 eintr_retry_call(conn.sendall, ans+b'\0')
             except Exception:
@@ -86,6 +100,12 @@ def main_loop(sock):
     try:
         while True:
             try:
+                r, w, e = select.select((sock,), (), (sock,), 2.0)
+                if e:
+                    # An exception occurred on the socket, abort
+                    raise SystemExit(1)
+                if not r:
+                    continue
                 conn, _ = eintr_retry_call(sock.accept)
             except socket.error:
                 continue
@@ -167,6 +187,9 @@ def main():
         return main_loop(sock)
     daemonize()
     main_loop(sock)
+
+if __name__ == '__main__':
+    main()
 
 if __name__ == '__main__':
     main()
