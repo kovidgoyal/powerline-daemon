@@ -9,7 +9,7 @@ Currently only works on linux.
 To use it, compile the powerline-client as
 
 ```
-gcc powerline-client.c -o powerline-client
+gcc -O3 powerline-client.c -o powerline-client
 ```
 Make powerline-daemon executable
 

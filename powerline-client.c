@@ -28,12 +28,13 @@ void do_write(int sd, const char *raw, int len) {
 }
         
 int main(int argc, char *argv[]) {
-    int sd = -1, i, j=0;
+    int sd = -1, i;
     struct sockaddr_un server;
     char address[50] = {};
     const char eof[2] = "\0\0";
     char buf[4096] = {};
     char *newargv[200] = {};
+    char *wd = NULL;
 
     if (argc < 2) { printf("Must provide at least one argument.\n"); return EXIT_FAILURE; }
 
@@ -50,14 +51,9 @@ int main(int argc, char *argv[]) {
         close(sd);
         // We failed to connect to the daemon, execute powerline instead
         argc = (argc < 199) ? argc : 199;
-        for (i=1, j=0; i < argc; i++) {
-            // We dont need the --cwd option since we are already in the correct directory
-            if (strstr(argv[i], "--cwd=") == argv[i]) { j += 1; continue; }
-            if (strcmp("--cwd", argv[i]) == 0) { j += 2; i+=1; continue; }
-            newargv[i-j] = argv[i];
-        }
+        for (i=1; i < argc; i++) newargv[i] = argv[i];
         newargv[0] = "powerline";
-        newargv[argc-j] = NULL;
+        newargv[argc] = NULL;
         execvp("powerline", newargv);
     }
 
@@ -65,6 +61,14 @@ int main(int argc, char *argv[]) {
         do_write(sd, argv[i], strlen(argv[i]));
         do_write(sd, eof, 1);
     }
+
+    wd = getcwd(NULL, 0);
+    if (wd != NULL) {
+        do_write(sd, "--cwd=", 6);
+        do_write(sd, wd, strlen(wd));
+        free(wd); wd = NULL;
+    }
+
     do_write(sd, eof, 2);
 
     i = -1;
@@ -75,7 +79,7 @@ int main(int argc, char *argv[]) {
             handle_error("read() failed");
         }
         if (i > 0) 
-            write(STDOUT_FILENO, buf, i);
+            write(STDOUT_FILENO, buf, i) || 0;
     }
 
     close(sd);
