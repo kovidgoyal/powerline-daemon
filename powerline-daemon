@@ -16,7 +16,21 @@ from powerline.lib import parsedotval
 # in linux)
 address = '\0powerline-ipc-%d'%os.getuid()
 
-parser = argparse.ArgumentParser()
+class NonInteractiveArgParser(argparse.ArgumentParser):
+
+    def print_usage(self, file=None):
+        raise Exception(self.format_usage())
+
+    def print_help(self, file=None):
+        raise Exception(self.format_help())
+
+    def exit(self, status=0, message=None):
+        pass
+
+    def error(self, message):
+        raise Exception(self.format_usage())
+
+parser = NonInteractiveArgParser()
 parser.add_argument('ext', nargs=1)
 parser.add_argument('side', nargs='?', choices=('left', 'right'))
 parser.add_argument('-r', '--renderer_module', metavar='MODULE', type=str)
@@ -84,7 +98,7 @@ def do_render(req):
         args = [x for x in req.split(b'\0') if x]
         args = parser.parse_args(args)
         ans = render(args)
-    except (Exception, SystemExit) as e:
+    except Exception as e:
         ans = str(e)
     if isinstance(ans, type(u'')):
         ans = ans.encode('utf-8')
