@@ -195,6 +195,19 @@ def check_existing():
         raise
     return sock
 
+def test_connect():
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        try:
+            eintr_retry_call(sock.connect, address)
+        except socket.error:
+            return False
+        else:
+            eintr_retry_call(sock.sendall, EOF)
+    finally:
+        sock.close()
+    return True
+
 def main():
     p = argparse.ArgumentParser(description=
         'Daemon to improve the performance of powerline')
@@ -203,18 +216,18 @@ def main():
       'Kill an already running instance')
     a('--foreground', '-f', action='store_true', help=
       'Run in the foreground (dont daemonize)')
+    a('--replace', '-r', action='store_true', help=
+      'Replace an already running instance')
     args = p.parse_args()
     if args.kill:
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        try:
-            sock.connect(address)
-        except socket.error:
+        if test_connect():
+            print ('Kill command sent to daemon, if it does not die in a couple of seconds use kill to kill it')
+        else:
             print ('No running daemon found')
-            return
-        sock.sendall(EOF)
-        sock.close()
-        print ('Kill command sent to daemon, if it does not die in a couple of seconds use kill to kill it')
         return
+    if args.replace:
+        while test_connect():
+            time.sleep(2)
     sock = check_existing()
     if sock is None:
         print ('The daemon is already running. Use %s -k to kill it.'%
