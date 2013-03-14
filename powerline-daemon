@@ -29,7 +29,7 @@ class NonInteractiveArgParser(argparse.ArgumentParser):
     def error(self, message):
         raise Exception(self.format_usage())
 
-parser = get_argparser('powerline daemon', parser=NonInteractiveArgParser)
+parser = get_argparser(parser=NonInteractiveArgParser, usage='powerline daemon')
 parser.add_argument('--cwd', metavar='PATH')
 
 EOF = b'EOF\0\0'
