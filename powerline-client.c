@@ -10,15 +10,25 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <errno.h>
 
 #define handle_error(msg) \
     do { perror(msg); exit(EXIT_FAILURE); } while (0)
+
+#ifndef TEMP_FAILURE_RETRY
+#define TEMP_FAILURE_RETRY(expression) \
+  (                                                                           \
+    ({ long int __result;                                                     \
+       do __result = (long int) (expression);                                 \
+       while (__result == -1L && errno == EINTR);                             \
+       __result; }))
+#endif
 
 void do_write(int sd, const char *raw, int len) {
     int written = 0, n = -1;
 
     while (written < len) {
-        n = write(sd, raw+written, len-written);
+        n = TEMP_FAILURE_RETRY(write(sd, raw+written, len-written));
         if (n == -1) {
             close(sd);
             handle_error("write() failed");
@@ -26,7 +36,7 @@ void do_write(int sd, const char *raw, int len) {
         written += n;
     }
 }
-        
+
 int main(int argc, char *argv[]) {
     int sd = -1, i;
     struct sockaddr_un server;
@@ -38,16 +48,28 @@ int main(int argc, char *argv[]) {
 
     if (argc < 2) { printf("Must provide at least one argument.\n"); return EXIT_FAILURE; }
 
+#ifdef __APPLE__
+    snprintf(address, 50, "/tmp/powerline-ipc-%d", getuid());
+#else
     snprintf(address, 50, "powerline-ipc-%d", getuid());
+#endif
 
     sd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sd == -1) handle_error("socket() failed");
 
     memset(&server, 0, sizeof(struct sockaddr_un)); // Clear 
     server.sun_family = AF_UNIX;
+#ifdef __APPLE__
+    strncpy(server.sun_path, address, strlen(address));
+#else
     strncpy(server.sun_path+1, address, strlen(address));
+#endif
 
+#ifdef __APPLE__
+    if (connect(sd, (struct sockaddr *) &server, sizeof(server.sun_family) + strlen(address)) < 0) {
+#else
     if (connect(sd, (struct sockaddr *) &server, sizeof(server.sun_family) + strlen(address)+1) < 0) {
+#endif
         close(sd);
         // We failed to connect to the daemon, execute powerline instead
         argc = (argc < 199) ? argc : 199;
@@ -73,7 +95,7 @@ int main(int argc, char *argv[]) {
 
     i = -1;
     while (i != 0) {
-        i = read(sd, buf, 4096);
+        i = TEMP_FAILURE_RETRY(read(sd, buf, 4096));
         if (i == -1) {
             close(sd);
             handle_error("read() failed");

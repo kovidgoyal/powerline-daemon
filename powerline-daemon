@@ -3,17 +3,27 @@
 from __future__ import (unicode_literals, division, absolute_import,
                         print_function)
 
-__license__   = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import socket, os, argparse, errno, sys, select, time
+import socket, os, argparse, errno, sys, select, time, signal
+from functools import partial
 
 from powerline.shell import ShellPowerline, get_argparser
 
-# Use the abstract namespace for sockets rather than the filesystem (Available
-# in linux)
-address = '\0powerline-ipc-%d'%os.getuid()
+platform = sys.platform.lower()
+use_filesystem = 'darwin' in platform
+# use_filesystem = True
+del platform
+
+if use_filesystem:
+    address = '/tmp/powerline-ipc-%d'
+    pidfile = address + '.pid'
+else:
+    # Use the abstract namespace for sockets rather than the filesystem
+    # (Available only in linux)
+    address = '\0powerline-ipc-%d'
+address = address%os.getuid()
 
 class NonInteractiveArgParser(argparse.ArgumentParser):
 
@@ -53,7 +63,7 @@ def eintr_retry_call(func, *args, **kwargs):
         try:
             return func(*args, **kwargs)
         except EnvironmentError as e:
-            if getattr(e, 'errno', None) in (errno.EINTR, errno.EBUSY, errno.EAGAIN):
+            if getattr(e, 'errno', None) == errno.EINTR:
                 continue
             raise
 
@@ -186,6 +196,14 @@ def daemonize(stdin=os.devnull, stdout=os.devnull, stderr=os.devnull):
     os.dup2(se.fileno(), sys.stderr.fileno())
 
 def check_existing():
+    if use_filesystem:
+        # We cannot bind if the socket file already exists so remove it, we
+        # already have a lock on pidfile, so this should be safe.
+        try:
+            os.unlink(address)
+        except EnvironmentError:
+            pass
+
     sock = socket.socket(family=socket.AF_UNIX)
     try:
         sock.bind(address)
@@ -208,6 +226,36 @@ def test_connect():
         sock.close()
     return True
 
+def cleanup_lockfile(fd, *args):
+    try:
+        # Remove the directory entry for the lock file
+        os.unlink(pidfile)
+        # Close the file descriptor
+        os.close(fd)
+    except EnvironmentError:
+        pass
+    if args:
+        # Called in signal handler
+        raise SystemExit(1)
+
+def lockpidfile():
+    import fcntl, atexit, stat
+    fd = os.open(pidfile, os.O_WRONLY|os.O_CREAT,
+                 stat.S_IRUSR|stat.S_IWUSR|stat.S_IRGRP|stat.S_IROTH)
+    try:
+        fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except EnvironmentError:
+        os.close(fd)
+        return None
+    os.lseek(fd, 0, os.SEEK_SET)
+    os.ftruncate(fd, 0)
+    os.write(fd, (u'%d'%os.getpid()).encode('ascii'))
+    os.fsync(fd)
+    cleanup = partial(cleanup_lockfile, fd)
+    signal.signal(signal.SIGTERM, cleanup)
+    atexit.register(cleanup)
+    return fd
+
 def main():
     p = argparse.ArgumentParser(description=
         'Daemon to improve the performance of powerline')
@@ -219,15 +267,32 @@ def main():
     a('--replace', '-r', action='store_true', help=
       'Replace an already running instance')
     args = p.parse_args()
+
     if args.kill:
         if test_connect():
             print ('Kill command sent to daemon, if it does not die in a couple of seconds use kill to kill it')
         else:
             print ('No running daemon found')
         return
+
     if args.replace:
         while test_connect():
+            print ('Kill command sent to daemon, waiting for daemon to exit, press Ctrl-C to terminate wait and exit')
             time.sleep(2)
+
+    if use_filesystem and not args.foreground:
+        # We must daemonize before creating the locked pidfile, unfortunately,
+        # this means further print statements are discarded
+        daemonize()
+
+    if use_filesystem:
+        # Create a locked pid file containing the daemon's PID
+        if lockpidfile() is None:
+            print ('The daemon is already running. Use %s -k to kill it.'%
+               os.path.basename(sys.argv[0]), file=sys.stderr)
+            raise SystemExit(1)
+
+    # Bind to address or bail if we cannot bind
     sock = check_existing()
     if sock is None:
         print ('The daemon is already running. Use %s -k to kill it.'%
@@ -236,7 +301,11 @@ def main():
 
     if args.foreground:
         return main_loop(sock)
-    daemonize()
+
+    if not use_filesystem:
+        # We daemonize on linux
+        daemonize()
+
     main_loop(sock)
 
 if __name__ == '__main__':
