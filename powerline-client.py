@@ -34,7 +34,6 @@ try:
     eintr_retry_call(sock.connect, address)
 except Exception:
     # Run the powerline client
-    getcwd = getattr(os, 'getcwdu', os.getcwd)
     args = ['powerline'] + sys.argv[1:]
     os.execvp('powerline', args)
 
@@ -42,12 +41,16 @@ fenc = sys.getfilesystemencoding() or 'utf-8'
 if fenc == 'ascii':
     fenc = 'utf-8'
 
-cwd = os.getcwd()
-if isinstance(cwd, type('')):
-    cwd = cwd.encode(fenc)
-
 args = [x.encode(fenc) if isinstance(x, type('')) else x for x in sys.argv[1:]]
-args.append(b'--cwd='+cwd)
+
+try:
+    cwd = os.getcwd()
+except EnvironmentError:
+    pass
+else:
+    if isinstance(cwd, type('')):
+        cwd = cwd.encode(fenc)
+    args.append(b'--cwd='+cwd)
 
 EOF = b'\0\0'
 
