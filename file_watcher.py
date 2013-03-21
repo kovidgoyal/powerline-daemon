@@ -93,7 +93,7 @@ class INotifyWatch(object):
         import ctypes
         buf = []
         while True:
-            num = self._read(self._inotify_fd, self._buf, 5000)
+            num = self._read(self._inotify_fd, self._buf, len(self._buf))
             if num == 0:
                 break
             if num < 0:
