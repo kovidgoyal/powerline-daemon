@@ -109,10 +109,8 @@ class INotifyWatch(object):
         lraw = len(raw)
         while lraw - pos >= self.hdr.size:
             wd, mask, cookie, name_len = self.hdr.unpack_from(raw, pos)
-            pos += self.hdr.size
-            if name_len > 0:
-                # We dont care about names as we only watch files
-                pos += name_len
+            # We dont care about names as we only watch files
+            pos += self.hdr.size + name_len
             self.process_event(wd, mask, cookie)
 
     def process_event(self, wd, mask, cookie):
