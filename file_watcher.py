@@ -6,6 +6,7 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 import os, sys, errno
+from threading import RLock
 
 class INotifyError(Exception):
     pass
@@ -67,24 +68,12 @@ class INotifyWatch(object):
         self.hdr = struct.Struct(b'iIII')
         if self.fenc == 'ascii':
             self.fenc = 'utf-8'
+        self.lock = RLock()
 
     def handle_error(self):
         import ctypes
         eno = ctypes.get_errno()
         raise OSError(eno, os.strerror(eno))
-
-    def close(self):
-        for path in tuple(self.watches):
-            try:
-                self.unwatch(path)
-            except OSError:
-                pass
-        if self._inotify_fd is not None:
-            self.os.close(self._inotify_fd)
-            del self.os
-            del self._add_watch
-            del self._rm_watch
-            self._inotify_fd = None
 
     def __del__(self):
         self.close()
@@ -124,45 +113,62 @@ class INotifyWatch(object):
         ''' Remove the watch for path. Raises an OSError if removing the watch
         fails for some reason. '''
         path = os.path.abspath(path)
-        self.modified.pop(path, None)
-        wd = self.watches.pop(path, None)
-        if wd is not None:
-            if self._rm_watch(self._inotify_fd, wd) != 0:
-                self.handle_error()
+        with self.lock:
+            self.modified.pop(path, None)
+            wd = self.watches.pop(path, None)
+            if wd is not None:
+                if self._rm_watch(self._inotify_fd, wd) != 0:
+                    self.handle_error()
 
     def watch(self, path):
         ''' Register a watch for the file named path. Raises an OSError if path
         does not exist. '''
         import ctypes
         path = os.path.abspath(path)
-        if path not in self.watches:
-            bpath = path if isinstance(path, bytes) else path.encode(self.fenc)
-            wd = self._add_watch(self._inotify_fd, ctypes.c_char_p(bpath),
-                    self.MODIFY | self.ATTRIB | self.MOVE_SELF | self.DELETE_SELF)
-            if wd == -1:
-                self.handle_error()
-            self.watches[path] = wd
-            self.modified[path] = False
+        with self.lock:
+            if path not in self.watches:
+                bpath = path if isinstance(path, bytes) else path.encode(self.fenc)
+                wd = self._add_watch(self._inotify_fd, ctypes.c_char_p(bpath),
+                        self.MODIFY | self.ATTRIB | self.MOVE_SELF | self.DELETE_SELF)
+                if wd == -1:
+                    self.handle_error()
+                self.watches[path] = wd
+                self.modified[path] = False
 
     def __call__(self, path):
         ''' Return True if path has been modified since the last call. Can
         raise OSError if the path does not exist. '''
         path = os.path.abspath(path)
-        if path not in self.watches:
-            if path in self.modified:
-                # This file has unwatched return the last modified status
-                return self.modified.pop(path, False)
-            # Try to re-add the watch, it will fail if the file does not
-            # exist/you dont have permission
-            self.watch(path)
-            return True
-        self.read()
-        if path not in self.modified:
-            raise RuntimeError('This should never happen')
-        ans = self.modified[path]
-        if ans:
-            self.modified[path] = False
-        return ans
+        with self.lock:
+            if path not in self.watches:
+                if path in self.modified:
+                    # This file has unwatched return the last modified status
+                    return self.modified.pop(path, False)
+                # Try to re-add the watch, it will fail if the file does not
+                # exist/you dont have permission
+                self.watch(path)
+                return True
+            self.read()
+            if path not in self.modified:
+                raise RuntimeError('This should never happen')
+            ans = self.modified[path]
+            if ans:
+                self.modified[path] = False
+            return ans
+
+    def close(self):
+        with self.lock:
+            for path in tuple(self.watches):
+                try:
+                    self.unwatch(path)
+                except OSError:
+                    pass
+            if self._inotify_fd is not None:
+                self.os.close(self._inotify_fd)
+                del self.os
+                del self._add_watch
+                del self._rm_watch
+                self._inotify_fd = None
 
 def get_inotify():
     ''' Initialize the inotify based file watcher '''
@@ -208,27 +214,32 @@ class StatWatch(object):
 
     def __init__(self):
         self.watches = {}
+        self.lock = RLock()
 
     def watch(self, path):
         path = os.path.abspath(path)
-        self.watches[path] = os.path.getmtime(path)
+        with self.lock:
+            self.watches[path] = os.path.getmtime(path)
 
     def unwatch(self, path):
         path = os.path.abspath(path)
-        self.watches.pop(path, None)
+        with self.lock:
+            self.watches.pop(path, None)
 
     def __call__(self, path):
         path = os.path.abspath(path)
-        if path not in self.watches:
-            raise OSError(errno.ENOENT, "The file %s is not watched"%path)
-        mtime = os.path.getmtime(path)
-        if mtime != self.watches[path]:
-            self.watches[path] = mtime
-            return True
-        return False
+        with self.lock:
+            if path not in self.watches:
+                raise OSError(errno.ENOENT, "The file %s is not watched"%path)
+            mtime = os.path.getmtime(path)
+            if mtime != self.watches[path]:
+                self.watches[path] = mtime
+                return True
+            return False
 
     def close(self):
-        self.watches = {}
+        with self.lock:
+            self.watches = {}
 
 def create_file_watcher():
     '''
