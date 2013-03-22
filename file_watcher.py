@@ -258,8 +258,7 @@ def create_file_watcher(expire_time=10):
     Create an object that can watch for changes to specified files. To use:
 
     watcher = create_file_watcher()
-    watcher.watch(path1)
-    watcher(path1) # Will return True if path1 has changed since the last time
+    watcher(path1) # Will return True if path1 has changed since the last time this was called. Always returns True the first time.
     watcher.unwatch(path1)
 
     Uses inotify if available, otherwise tracks mtimes. expire_time is the
