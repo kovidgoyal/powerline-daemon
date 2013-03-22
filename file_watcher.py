@@ -241,7 +241,8 @@ class StatWatch(object):
         path = os.path.abspath(path)
         with self.lock:
             if path not in self.watches:
-                raise OSError(errno.ENOENT, "The file %s is not watched"%path)
+                self.watches[path] = os.path.getmtime(path)
+                return True
             mtime = os.path.getmtime(path)
             if mtime != self.watches[path]:
                 self.watches[path] = mtime
