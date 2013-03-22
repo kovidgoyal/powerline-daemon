@@ -5,7 +5,7 @@ from __future__ import unicode_literals
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, sys, errno
+import os, sys, errno, time
 from threading import RLock
 
 class INotifyError(Exception):
@@ -55,7 +55,7 @@ class INotifyWatch(object):
     CLOEXEC = 02000000
     NONBLOCK = 00004000
 
-    def __init__(self, inotify_fd, add_watch, rm_watch, read):
+    def __init__(self, inotify_fd, add_watch, rm_watch, read, expire_time=10):
         import ctypes, struct
         self._inotify_fd = inotify_fd
         self._add_watch, self._rm_watch = add_watch, rm_watch
@@ -63,12 +63,14 @@ class INotifyWatch(object):
         self.os = os
         self.watches = {}
         self.modified = {}
+        self.last_query = {}
         self._buf = ctypes.create_string_buffer(5000)
         self.fenc = sys.getfilesystemencoding() or 'utf-8'
         self.hdr = struct.Struct(b'iIII')
         if self.fenc == 'ascii':
             self.fenc = 'utf-8'
         self.lock = RLock()
+        self.expire_time = expire_time * 60
 
     def handle_error(self):
         import ctypes
@@ -102,6 +104,12 @@ class INotifyWatch(object):
             pos += self.hdr.size + name_len
             self.process_event(wd, mask, cookie)
 
+    def expire_watches(self):
+        now = time.time()
+        for path, last_query in tuple(self.last_query.items()):
+            if last_query - now > self.expire_time:
+                self.unwatch(path)
+
     def process_event(self, wd, mask, cookie):
         for path, num in tuple(self.watches.items()):
             if num == wd:
@@ -115,6 +123,7 @@ class INotifyWatch(object):
         path = os.path.abspath(path)
         with self.lock:
             self.modified.pop(path, None)
+            self.last_query.pop(path, None)
             wd = self.watches.pop(path, None)
             if wd is not None:
                 if self._rm_watch(self._inotify_fd, wd) != 0:
@@ -140,6 +149,8 @@ class INotifyWatch(object):
         raise OSError if the path does not exist. '''
         path = os.path.abspath(path)
         with self.lock:
+            self.last_query[path] = time.time()
+            self.expire_watches()
             if path not in self.watches:
                 if path in self.modified:
                     # This file has unwatched return the last modified status
@@ -170,7 +181,7 @@ class INotifyWatch(object):
                 del self._rm_watch
                 self._inotify_fd = None
 
-def get_inotify():
+def get_inotify(expire_time=10):
     ''' Initialize the inotify based file watcher '''
     import ctypes
     from ctypes.util import find_library
@@ -208,7 +219,7 @@ def get_inotify():
     inotify_fd = init1(INotifyWatch.CLOEXEC|INotifyWatch.NONBLOCK)
     if inotify_fd == -1:
         raise INotifyError(os.strerror(ctypes.get_errno()))
-    return INotifyWatch(inotify_fd, add_watch, rm_watch, read)
+    return INotifyWatch(inotify_fd, add_watch, rm_watch, read, expire_time=expire_time)
 
 class StatWatch(object):
 
@@ -241,7 +252,7 @@ class StatWatch(object):
         with self.lock:
             self.watches = {}
 
-def create_file_watcher():
+def create_file_watcher(expire_time=10):
     '''
     Create an object that can watch for changes to specified files. To use:
 
@@ -250,16 +261,18 @@ def create_file_watcher():
     watcher(path1) # Will return True if path1 has changed since the last time
     watcher.unwatch(path1)
 
-    Uses inotify if available, otherwise tracks mtimes.
+    Uses inotify if available, otherwise tracks mtimes. expire_time is the
+    number of minutes after the last query for a given path for the inotify
+    watch for that path to be automatically removed. This conserves kernel
+    resources.
     '''
     try:
-        return get_inotify()
+        return get_inotify(expire_time=expire_time)
     except INotifyError:
         pass
     return StatWatch()
 
 if __name__ == '__main__':
-    import time
     watcher = create_file_watcher()
     print ('Using watcher: %s'%watcher.__class__.__name__)
     print ('Watching %s, press Ctrl-C to quit'%sys.argv[-1])
