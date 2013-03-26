@@ -24,6 +24,8 @@
        __result; }))
 #endif
 
+extern char **environ;
+
 void do_write(int sd, const char *raw, int len) {
     int written = 0, n = -1;
 
@@ -45,6 +47,7 @@ int main(int argc, char *argv[]) {
     char buf[4096] = {};
     char *newargv[200] = {};
     char *wd = NULL;
+    char **envp;
 
     if (argc < 2) { printf("Must provide at least one argument.\n"); return EXIT_FAILURE; }
 
@@ -81,6 +84,12 @@ int main(int argc, char *argv[]) {
 
     for (i = 1; i < argc; i++) {
         do_write(sd, argv[i], strlen(argv[i]));
+        do_write(sd, eof, 1);
+    }
+
+    for(envp=environ; *envp; envp++) {
+        do_write(sd, "--env=", 6);
+        do_write(sd, *envp, strlen(*envp));
         do_write(sd, eof, 1);
     }
 

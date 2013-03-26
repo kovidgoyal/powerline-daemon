@@ -52,6 +52,10 @@ else:
         cwd = cwd.encode(fenc)
     args.append(b'--cwd='+cwd)
 
+env = (k+'='+v for k,v in os.environ.items())
+env = (x if isinstance(x, bytes) else x.encode(fenc, 'replace') for x in env)
+args.extend(b'--env='+x for x in env)
+
 EOF = b'\0\0'
 
 for a in args:

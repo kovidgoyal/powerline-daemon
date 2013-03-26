@@ -41,22 +41,17 @@ class NonInteractiveArgParser(argparse.ArgumentParser):
 
 parser = get_argparser(parser=NonInteractiveArgParser, description='powerline daemon')
 parser.add_argument('--cwd', metavar='PATH')
+parser.add_argument('--env', action='append')
 
 EOF = b'EOF\0\0'
 
 def render(args):
-    if args.cwd:
-        odir = os.getcwd()
-        try:
-            os.chdir(args.cwd)
-        except EnvironmentError:
-            pass # cwd does not exist/No permissions to execute it
-    try:
-        powerline = ShellPowerline(args)
-        return powerline.renderer.render(width=args.width, side=args.side)
-    finally:
-        if args.cwd:
-            os.chdir(odir)
+    environ = {k:v for k, v in (x.partition('=')[0::2] for x in args.env)}
+    cwd = environ.get('PWD', args.cwd or '/')
+    os.getcwd = os.getcwdu = lambda : cwd
+    os.environ = environ
+    powerline = ShellPowerline(args)
+    return powerline.renderer.render(width=args.width, side=args.side)
 
 def eintr_retry_call(func, *args, **kwargs):
     while True:
