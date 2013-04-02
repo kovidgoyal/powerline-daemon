@@ -9,8 +9,10 @@ __docformat__ = 'restructuredtext en'
 import socket, os, argparse, errno, sys, select, time, signal
 from functools import partial
 
-from powerline.shell import ShellPowerline, get_argparser
+from powerline import Powerline
+from powerline.shell import get_argparser
 
+is_daemon = False
 platform = sys.platform.lower()
 use_filesystem = 'darwin' in platform
 # use_filesystem = True
@@ -45,13 +47,43 @@ parser.add_argument('--env', action='append')
 
 EOF = b'EOF\0\0'
 
+powerlines = {}
+logger = None
+home = os.path.expanduser('~')
+
+class PowerlineDaemon(Powerline):
+
+    def get_log_handler(self):
+        if not is_daemon:
+            import logging
+            return logging.StreamHandler()
+        return super(PowerlineDaemon, self).get_log_handler()
+
 def render(args):
+    global pl
+    global logger
     environ = {k:v for k, v in (x.partition('=')[0::2] for x in args.env)}
     cwd = environ.get('PWD', args.cwd or '/')
-    os.getcwd = os.getcwdu = lambda : cwd
-    os.environ = environ
-    powerline = ShellPowerline(args)
-    return powerline.renderer.render(width=args.width, side=args.side)
+    segment_info = {
+        'getcwd': lambda : cwd,
+        'home': environ.get('HOME', home),
+        'environ': environ,
+        'args':args,
+    }
+    key = (args.ext[0], args.renderer_module)
+    pl = powerlines.get(key, None)
+    try:
+        if pl is None:
+            pl = powerlines[key] = PowerlineDaemon(key[0], renderer_module=key[1], interval=None, logger=logger)
+    except SystemExit:
+        # Somebody thought raising system exit was a good idea,
+        return ''
+    except Exception as e:
+        if pl is not None:
+            pl.pl.exception('Failed to render {0}: {1}', str(key), str(e))
+    if logger is None:
+        logger = pl.logger
+    return pl.render(width=args.width, side=args.side, segment_info=segment_info)
 
 def eintr_retry_call(func, *args, **kwargs):
     while True:
@@ -189,6 +221,8 @@ def daemonize(stdin=os.devnull, stdout=os.devnull, stderr=os.devnull):
     os.dup2(si.fileno(), sys.stdin.fileno())
     os.dup2(so.fileno(), sys.stdout.fileno())
     os.dup2(se.fileno(), sys.stderr.fileno())
+    global is_daemon
+    is_daemon = True
 
 def check_existing():
     if use_filesystem:
