@@ -2,3 +2,6 @@ powerline-client
 powerline-client-apple
 session.vim
 tags
+build
+dist
+powerline_daemon.egg-info/
