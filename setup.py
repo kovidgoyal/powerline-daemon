@@ -11,13 +11,13 @@ from setuptools import setup
 
 
 def compile():
-    from distutils.ccompiler import new_compiler
-    compiler = new_compiler().compiler
     # Try to compile the C powerline-client
     if hasattr(sys, 'getwindowsversion'):
         raise NotImplementedError()
     else:
-        subprocess.check_call(compiler + ['powerline-client.c', '-o', 'powerline-client'])
+        from distutils.ccompiler import new_compiler
+        compiler = new_compiler().compiler
+        subprocess.check_call(compiler + ['-O3', 'powerline-client.c', '-o', 'powerline-client'])
 
 try:
     compile()
