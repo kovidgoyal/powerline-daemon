@@ -121,6 +121,23 @@ def do_write(conn, result):
     except Exception:
         pass
 
+def safe_bytes(o, encoding):
+    '''Return bytes instance without ever throwing an exception.'''
+    try:
+        try:
+            # We are assuming that o is a unicode object
+            return o.encode(encoding, 'replace')
+        except Exception:
+            # Object may have defined __bytes__ (python 3) or __str__ method 
+            # (python 2)
+            # This also catches problem with non_ascii_bytes.encode('utf-8') 
+            # that first tries to decode to UTF-8 using ascii codec (and fails 
+            # in this case) and then encode to given encoding: errors= argument 
+            # is not used in the first stage.
+            return bytes(o)
+    except Exception as e:
+        return safe_bytes(str(e), encoding)
+
 def do_render(req):
     encoding = locale.getlocale(locale.LC_CTYPE)[1] or locale.getdefaultlocale()[1] or 'UTF-8'
     if encoding.lower() == 'ascii':
@@ -128,14 +145,9 @@ def do_render(req):
     try:
         args = [x.decode(encoding) for x in req.split(b'\0') if x]
         args = parser.parse_args(args)
-        ans = render(args)
+        return safe_bytes(render(args), encoding)
     except Exception as e:
-        ans = str(e)
-    try:
-        ans = ans.encode(encoding)
-    except AttributeError:
-        pass
-    return ans
+        return safe_bytes(str(e), encoding)
 
 def do_one(sock, read_sockets, write_sockets, result_map):
     r, w, e = select.select(
