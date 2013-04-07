@@ -8,6 +8,7 @@ __docformat__ = 'restructuredtext en'
 
 import socket, os, argparse, errno, sys, select, time, signal
 from functools import partial
+import locale
 
 from powerline import Powerline
 from powerline.shell import get_argparser
@@ -62,7 +63,7 @@ class PowerlineDaemon(Powerline):
 def render(args):
     global pl
     global logger
-    environ = {k:v for k, v in (x.partition('=')[0::2] for x in args.env)}
+    environ = dict(((k, v) for k, v in (x.partition('=')[0::2] for x in args.env)))
     cwd = environ.get('PWD', args.cwd or '/')
     segment_info = {
         'getcwd': lambda : cwd,
@@ -74,7 +75,7 @@ def render(args):
     pl = powerlines.get(key, None)
     try:
         if pl is None:
-            pl = powerlines[key] = PowerlineDaemon(key[0], renderer_module=key[1], interval=None, logger=logger)
+            pl = powerlines[key] = PowerlineDaemon(key[0], renderer_module=key[1], logger=logger)
     except SystemExit:
         # Somebody thought raising system exit was a good idea,
         return ''
@@ -120,16 +121,33 @@ def do_write(conn, result):
     except Exception:
         pass
 
-def do_render(req):
+def safe_bytes(o, encoding):
+    '''Return bytes instance without ever throwing an exception.'''
     try:
-        args = [x for x in req.split(b'\0') if x]
-        args = parser.parse_args(args)
-        ans = render(args)
+        try:
+            # We are assuming that o is a unicode object
+            return o.encode(encoding, 'replace')
+        except Exception:
+            # Object may have defined __bytes__ (python 3) or __str__ method 
+            # (python 2)
+            # This also catches problem with non_ascii_bytes.encode('utf-8') 
+            # that first tries to decode to UTF-8 using ascii codec (and fails 
+            # in this case) and then encode to given encoding: errors= argument 
+            # is not used in the first stage.
+            return bytes(o)
     except Exception as e:
-        ans = str(e)
-    if isinstance(ans, type(u'')):
-        ans = ans.encode('utf-8')
-    return ans
+        return safe_bytes(str(e), encoding)
+
+def do_render(req):
+    encoding = locale.getlocale(locale.LC_CTYPE)[1] or locale.getdefaultlocale()[1] or 'UTF-8'
+    if encoding.lower() == 'ascii':
+        encoding = 'UTF-8'
+    try:
+        args = [x.decode(encoding) for x in req.split(b'\0') if x]
+        args = parser.parse_args(args)
+        return safe_bytes(render(args), encoding)
+    except Exception as e:
+        return safe_bytes(str(e), encoding)
 
 def do_one(sock, read_sockets, write_sockets, result_map):
     r, w, e = select.select(
@@ -278,7 +296,7 @@ def lockpidfile():
         return None
     os.lseek(fd, 0, os.SEEK_SET)
     os.ftruncate(fd, 0)
-    os.write(fd, (u'%d'%os.getpid()).encode('ascii'))
+    os.write(fd, ('%d' % os.getpid()).encode('ascii'))
     os.fsync(fd)
     cleanup = partial(cleanup_lockfile, fd)
     signal.signal(signal.SIGTERM, cleanup)
