@@ -17,8 +17,7 @@ from time import sleep
 from functools import partial
 from locale import getpreferredencoding
 
-from powerline import Powerline
-from powerline.shell import get_argparser
+from powerline.shell import get_argparser, finish_args, ShellPowerline
 from powerline.lib.monotonic import monotonic
 
 is_daemon = False
@@ -62,7 +61,7 @@ logger = None
 home = os.path.expanduser('~')
 
 
-class PowerlineDaemon(Powerline):
+class PowerlineDaemon(ShellPowerline):
 	def get_log_handler(self):
 		if not is_daemon:
 			import logging
@@ -71,7 +70,6 @@ class PowerlineDaemon(Powerline):
 
 
 def render(args):
-	global pl
 	global logger
 	environ = dict(((k, v) for k, v in (x.partition('=')[0::2] for x in args.env)))
 	cwd = environ.get('PWD', args.cwd or '/')
@@ -81,11 +79,17 @@ def render(args):
 		'environ': environ,
 		'args': args,
 	}
-	key = (args.ext[0], args.renderer_module)
+	key = (args.ext[0], args.renderer_module,
+			tuple(args.config) if args.config else None,
+			tuple(args.theme_option) if args.theme_option else None,)
+	finish_args(args)
 	pl = powerlines.get(key, None)
 	try:
 		if pl is None:
-			pl = powerlines[key] = PowerlineDaemon(key[0], renderer_module=key[1], logger=logger)
+			pl = powerlines[key] = PowerlineDaemon(
+				args,
+				logger=logger,
+			)
 	except SystemExit:
 		# Somebody thought raising system exit was a good idea,
 		return ''
