@@ -85,20 +85,24 @@ def render(args):
 			tuple(args.config) if args.config else None,
 			tuple(args.theme_option) if args.theme_option else None,)
 	finish_args(args)
-	pl = powerlines.get(key, None)
+	pl = None
 	try:
-		if pl is None:
+		pl = powerlines[key]
+	except KeyError:
+		try:
 			pl = powerlines[key] = PowerlineDaemon(
 				args,
 				logger=logger,
 				config_loader=config_loader
 			)
-	except SystemExit:
-		# Somebody thought raising system exit was a good idea,
-		return ''
-	except Exception as e:
-		if pl is not None:
-			pl.pl.exception('Failed to render {0}: {1}', str(key), str(e))
+		except SystemExit:
+			# Somebody thought raising system exit was a good idea,
+			return ''
+		except Exception as e:
+			if pl:
+				pl.pl.exception('Failed to render {0}: {1}', str(key), str(e))
+			else:
+				return 'Failed to render {0}: {1}'.format(str(key), str(e))
 	if logger is None:
 		logger = pl.logger
 	if config_loader is None:
