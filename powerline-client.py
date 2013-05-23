@@ -1,16 +1,19 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
+# vim:fileencoding=utf-8:noet
 from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
+						print_function)
 
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import sys, socket, os, errno
+import sys
+import socket
+import os
+import errno
 
 if len(sys.argv) < 2:
-    print("Must provide at least one argument.", file=sys.stderr)
-    raise SystemExit(1)
+	print("Must provide at least one argument.", file=sys.stderr)
+	raise SystemExit(1)
 
 platform = sys.platform.lower()
 use_filesystem = 'darwin' in platform
@@ -21,56 +24,57 @@ address = ('/tmp/powerline-ipc-%d' if use_filesystem else '\0powerline-ipc-%d')%
 
 sock = socket.socket(family=socket.AF_UNIX)
 
+
 def eintr_retry_call(func, *args, **kwargs):
-    while True:
-        try:
-            return func(*args, **kwargs)
-        except EnvironmentError as e:
-            if getattr(e, 'errno', None) == errno.EINTR:
-                continue
-            raise
+	while True:
+		try:
+			return func(*args, **kwargs)
+		except EnvironmentError as e:
+			if getattr(e, 'errno', None) == errno.EINTR:
+				continue
+			raise
 
 try:
-    eintr_retry_call(sock.connect, address)
+	eintr_retry_call(sock.connect, address)
 except Exception:
-    # Run the powerline client
-    args = ['powerline'] + sys.argv[1:]
-    os.execvp('powerline', args)
+	# Run the powerline client
+	args = ['powerline'] + sys.argv[1:]
+	os.execvp('powerline', args)
 
 fenc = sys.getfilesystemencoding() or 'utf-8'
 if fenc == 'ascii':
-    fenc = 'utf-8'
+	fenc = 'utf-8'
 
 args = [x.encode(fenc) if isinstance(x, type('')) else x for x in sys.argv[1:]]
 
 try:
-    cwd = os.getcwd()
+	cwd = os.getcwd()
 except EnvironmentError:
-    pass
+	pass
 else:
-    if isinstance(cwd, type('')):
-        cwd = cwd.encode(fenc)
-    args.append(b'--cwd='+cwd)
+	if isinstance(cwd, type('')):
+		cwd = cwd.encode(fenc)
+	args.append(b'--cwd=' + cwd)
 
-env = (k+'='+v for k,v in os.environ.items())
+
+env = (k + '=' + v for k, v in os.environ.items())
 env = (x if isinstance(x, bytes) else x.encode(fenc, 'replace') for x in env)
-args.extend(b'--env='+x for x in env)
+args.extend((b'--env=' + x for x in env))
 
 EOF = b'\0\0'
 
 for a in args:
-    eintr_retry_call(sock.sendall, a+EOF[0])
+	eintr_retry_call(sock.sendall, a + EOF[0])
 
 eintr_retry_call(sock.sendall, EOF)
 
 received = []
 while True:
-    r = sock.recv(4096)
-    if not r:
-        break
-    received.append(r)
+	r = sock.recv(4096)
+	if not r:
+		break
+	received.append(r)
 
 sock.close()
 
 print (b''.join(received))
-
