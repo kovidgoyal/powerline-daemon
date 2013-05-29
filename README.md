@@ -14,7 +14,7 @@ gcc -O3 powerline-client.c -o powerline-client
 Make powerline-daemon executable
 
 ```
-chmod +x powerline_daemon
+chmod +x powerline-daemon
 ```
 
 Then copy powerline-daemon and powerline-client somewhere on your path, like
