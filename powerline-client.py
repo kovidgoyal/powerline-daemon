@@ -76,5 +76,6 @@ while True:
 	received.append(r)
 
 sock.close()
-
-print (b''.join(received))
+raw = b''.join(received) + b'\n'
+os.write(sys.stdout.fileno(), raw)
+sys.stdout.flush()
