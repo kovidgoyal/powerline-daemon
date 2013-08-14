@@ -64,7 +64,7 @@ args.extend((b'--env=' + x for x in env))
 EOF = b'\0\0'
 
 for a in args:
-	eintr_retry_call(sock.sendall, a + EOF[0])
+	eintr_retry_call(sock.sendall, a + b'\0')
 
 eintr_retry_call(sock.sendall, EOF)
 
