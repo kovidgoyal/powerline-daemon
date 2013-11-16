@@ -12,6 +12,10 @@
 #include <unistd.h>
 #include <errno.h>
 
+#ifdef __APPLE__
+#include <string.h>
+#endif
+
 #define handle_error(msg) \
     do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
