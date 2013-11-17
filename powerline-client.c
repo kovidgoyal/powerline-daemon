@@ -12,6 +12,11 @@
 #include <unistd.h>
 #include <errno.h>
 
+#ifdef __APPLE__
+#include <string.h>
+#include <AvailabilityMacros.h>
+#endif
+
 #define handle_error(msg) \
     do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
@@ -68,7 +73,7 @@ int main(int argc, char *argv[]) {
     strncpy(server.sun_path+1, address, strlen(address));
 #endif
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED < 1090
     if (connect(sd, (struct sockaddr *) &server, sizeof(server.sun_family) + strlen(address)) < 0) {
 #else
     if (connect(sd, (struct sockaddr *) &server, sizeof(server.sun_family) + strlen(address)+1) < 0) {
