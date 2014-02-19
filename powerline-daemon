@@ -352,6 +352,7 @@ def main():
 	a('--kill', '-k', action='store_true', help='Kill an already running instance')
 	a('--foreground', '-f', action='store_true', help='Run in the foreground (dont daemonize)')
 	a('--replace', '-r', action='store_true', help='Replace an already running instance')
+	a('--silent', '-s', action='store_true', help='Exit silently if an running instance exists')
 	args = p.parse_args()
 
 	if args.kill:
@@ -381,6 +382,8 @@ def main():
 	# Bind to address or bail if we cannot bind
 	sock = check_existing()
 	if sock is None:
+		if args.silent:
+			sys.exit()
 		print ('The daemon is already running. Use %s -k to kill it.' % os.path.basename(sys.argv[0]),
 				file=sys.stderr)
 		raise SystemExit(1)
