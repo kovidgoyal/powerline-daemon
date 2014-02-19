@@ -84,9 +84,9 @@ def render(args):
 	key = (args.ext[0], args.renderer_module,
 			tuple(args.config) if args.config else None,
 			tuple(args.theme_option) if args.theme_option else None,)
+	finish_args(args)
 	if args.renderer_arg:
 		segment_info.update(args.renderer_arg)
-	finish_args(args)
 	pl = None
 	try:
 		pl = powerlines[key]
