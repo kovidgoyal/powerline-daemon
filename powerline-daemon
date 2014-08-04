@@ -81,9 +81,9 @@ def render(args, environ, cwd):
 	key = (args.ext[0], args.renderer_module,
 			tuple(args.config) if args.config else None,
 			tuple(args.theme_option) if args.theme_option else None,)
+	finish_args(args)
 	if args.renderer_arg:
 		segment_info.update(args.renderer_arg)
-	finish_args(args)
 	pl = None
 	try:
 		pl = powerlines[key]
@@ -356,6 +356,7 @@ def main():
 	a('--kill', '-k', action='store_true', help='Kill an already running instance')
 	a('--foreground', '-f', action='store_true', help='Run in the foreground (dont daemonize)')
 	a('--replace', '-r', action='store_true', help='Replace an already running instance')
+	a('--silent', '-s', action='store_true', help='Exit silently if an running instance exists')
 	args = p.parse_args()
 
 	if args.kill:
@@ -385,6 +386,8 @@ def main():
 	# Bind to address or bail if we cannot bind
 	sock = check_existing()
 	if sock is None:
+		if args.silent:
+			sys.exit()
 		print ('The daemon is already running. Use %s -k to kill it.' % os.path.basename(sys.argv[0]),
 				file=sys.stderr)
 		raise SystemExit(1)
