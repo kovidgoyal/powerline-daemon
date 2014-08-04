@@ -33,7 +33,7 @@ else:
 	# Use the abstract namespace for sockets rather than the filesystem
 	# (Available only in linux)
 	address = '\0powerline-ipc-%d'
-address = address%os.getuid()
+address = address % os.getuid()
 
 
 class NonInteractiveArgParser(ArgumentParser):
@@ -51,8 +51,6 @@ class NonInteractiveArgParser(ArgumentParser):
 
 
 parser = get_argparser(parser=NonInteractiveArgParser, description='powerline daemon')
-parser.add_argument('--cwd', metavar='PATH')
-parser.add_argument('--env', action='append')
 
 EOF = b'EOF\0\0'
 
@@ -70,11 +68,10 @@ class PowerlineDaemon(ShellPowerline):
 		return super(PowerlineDaemon, self).get_log_handler()
 
 
-def render(args):
+def render(args, environ, cwd):
 	global logger
 	global config_loader
-	environ = dict(((k, v) for k, v in (x.partition('=')[0::2] for x in args.env)))
-	cwd = environ.get('PWD', args.cwd or '/')
+	cwd = cwd or environ.get('PWD', '/')
 	segment_info = {
 		'getcwd': lambda: cwd,
 		'home': environ.get('HOME', home),
@@ -162,22 +159,29 @@ def safe_bytes(o, encoding=encoding):
 			# We are assuming that o is a unicode object
 			return o.encode(encoding, 'replace')
 		except Exception:
-			# Object may have defined __bytes__ (python 3) or __str__ method 
+			# Object may have defined __bytes__ (python 3) or __str__ method
 			# (python 2)
-			# This also catches problem with non_ascii_bytes.encode('utf-8') 
-			# that first tries to decode to UTF-8 using ascii codec (and fails 
-			# in this case) and then encode to given encoding: errors= argument 
+			# This also catches problem with non_ascii_bytes.encode('utf-8')
+			# that first tries to decode to UTF-8 using ascii codec (and fails
+			# in this case) and then encode to given encoding: errors= argument
 			# is not used in the first stage.
 			return bytes(o)
 	except Exception as e:
 		return safe_bytes(str(e), encoding)
 
 
+def parse_args(req):
+	args = [x.decode(encoding) for x in req.split(b'\0') if x]
+	numargs = int(args[0], 16)
+	shell_args = parser.parse_args(args[1:numargs + 1])
+	cwd = args[numargs + 1]
+	environ = dict(((k, v) for k, v in (x.partition('=')[0::2] for x in args[numargs + 2:])))
+	return shell_args, environ, cwd
+
+
 def do_render(req):
 	try:
-		args = [x.decode(encoding) for x in req.split(b'\0') if x]
-		args = parser.parse_args(args)
-		return safe_bytes(render(args))
+		return safe_bytes(render(*parse_args(req)))
 	except Exception as e:
 		return safe_bytes(str(e))
 
@@ -328,8 +332,8 @@ def lockpidfile():
 	import fcntl
 	import atexit
 	import stat
-	fd = os.open(pidfile, os.O_WRONLY|os.O_CREAT,
-					stat.S_IRUSR|stat.S_IWUSR|stat.S_IRGRP|stat.S_IROTH)
+	fd = os.open(pidfile, os.O_WRONLY | os.O_CREAT,
+					stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
 	try:
 		fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
 	except EnvironmentError:
@@ -346,8 +350,8 @@ def lockpidfile():
 
 
 def main():
-	p = ArgumentParser(description=
-		'Daemon to improve the performance of powerline')
+	p = ArgumentParser(
+		description='Daemon to improve the performance of powerline')
 	a = p.add_mutually_exclusive_group().add_argument
 	a('--kill', '-k', action='store_true', help='Kill an already running instance')
 	a('--foreground', '-f', action='store_true', help='Run in the foreground (dont daemonize)')

@@ -23,6 +23,7 @@
        while (__result == -1L && errno == EINTR);                             \
        __result; }))
 #endif
+#define NUM_ARGS_SIZE (sizeof(int) * 2)
 
 extern char **environ;
 
@@ -44,6 +45,7 @@ int main(int argc, char *argv[]) {
     struct sockaddr_un server;
     char address[50] = {};
     const char eof[2] = "\0\0";
+    char num_args[NUM_ARGS_SIZE];
     char buf[4096] = {};
     char *newargv[200] = {};
     char *wd = NULL;
@@ -82,22 +84,24 @@ int main(int argc, char *argv[]) {
         execvp("powerline", newargv);
     }
 
+    snprintf(num_args, NUM_ARGS_SIZE, "%x", argc - 1);
+    do_write(sd, num_args, strlen(num_args));
+    do_write(sd, eof, 1);
+
     for (i = 1; i < argc; i++) {
         do_write(sd, argv[i], strlen(argv[i]));
         do_write(sd, eof, 1);
     }
 
-    for(envp=environ; *envp; envp++) {
-        do_write(sd, "--env=", 6);
-        do_write(sd, *envp, strlen(*envp));
-        do_write(sd, eof, 1);
-    }
-
     wd = getcwd(NULL, 0);
     if (wd != NULL) {
-        do_write(sd, "--cwd=", 6);
         do_write(sd, wd, strlen(wd));
         free(wd); wd = NULL;
+    }
+
+    for(envp=environ; *envp; envp++) {
+        do_write(sd, *envp, strlen(*envp));
+        do_write(sd, eof, 1);
     }
 
     do_write(sd, eof, 2);
