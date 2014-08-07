@@ -107,15 +107,16 @@ def render(args, environ, cwd):
 	if config_loader is None:
 		config_loader = pl.config_loader
 	prompt = ''
+	render_mode = environ.get('_POWERLINE_MODE', None)
 	if args.side.startswith('above'):
 		for line in pl.render_above_lines(
 			width=args.width,
 			segment_info=segment_info,
-			mode=environ.get('_POWERLINE_MODE', None),
+			mode=render_mode
 		):
 			prompt += line + '\n'
 		args.side = args.side[len('above'):]
-	return prompt + pl.render(width=args.width, side=args.side, segment_info=segment_info)
+	return prompt + pl.render(width=args.width, side=args.side, segment_info=segment_info, mode=render_mode)
 
 
 def eintr_retry_call(func, *args, **kwargs):
